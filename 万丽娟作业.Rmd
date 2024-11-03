@@ -1,0 +1,213 @@
+---
+title: "第一次作业你的报告题目"
+CJKmainfont: Songti SC
+author: "万丽娟"
+date: "`Nov.Date(1)`"
+output:
+  html_document:
+    code_folding: show
+    fig_caption: yes
+    fig_width: 10
+    highlight: tango
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    latex_engine: xelatex
+---
+```{r setup, include = FALSE,echo = FALSE}
+
+#load library
+library(tidyverse)
+library(kableExtra)
+library(lubridate)
+library(scales)
+library(plotly)
+library(patchwork)
+library(ggrepel)
+library(wordcloud2)
+library(jiebaR)
+```
+
+# 你的主要发现
+
+1. 发现1 ：总价在10.6万-1380万之间，总价跨度比较大，单价都集中在1万-2万之间，数量也较为多，价格较高的房屋相对比较少。
+
+2. 发现2：平房的价格最低，塔楼和塔楼结合的户型价格较为接近，价格市场，但凡和塔楼有关系的房屋价位都会受影响
+  
+3. 发现3：房屋价格受房屋面积、朝向、装修情况、所在区域以及是否靠近地铁的影响，都基本成正比影响，面积在100左右的，朝向为南，精装修以及靠近地铁的价位都较高
+
+4.发现4：根据地理位置分析，：二手房关注多区域有后湖、积玉桥、盘龙城，阳逻最少，侧面反映，后湖、积玉桥、盘龙城的二手房交易量更为高一些，性价比也更高。
+    
+
+# 数据介绍
+
+本报告**链家**数据获取方式如下：
+    
+报告人在2023年9月12日获取了[链家武汉二手房网站](https://wh.lianjia.com/ershoufang/)数据。
+
+    
+```{r}
+# 载入数据和预处理
+
+lj<- read_csv("/Users/Air/Desktop/2023-09-12_cleaned.csv")
+```
+# EDA ---------------------------------------------------------------------
+
+## 如下语句可以解决画图中的中文显示问题，当然你可以用showtext包来解决
+```{r}
+theme_set(theme(text = element_text(family="Songti SC",size = 10)))
+```
+#这里family设置成你系统中的中文字体名。
+
+# 做一些数据预处理，比如把字符型变成factor。
+
+
+
+# 数据概览
+
+数据表（lj)共包括`r names(lj)`等`r ncol(lj)`个变量,共`r nrow(lj)`行。表的前10行示例如下：
+
+```{r}
+lj %>% 
+  head(10) %>%
+  kable(caption = "武汉链家二手房") %>% 
+  kable_styling()
+```
+
+各变量的简短信息：
+```{r}
+glimpse(lj)
+```
+
+各变量的简短统计：
+```{r}
+summary(lj)
+```
+```{r}
+ lj%>%
+group_by(property_region) %>%
+  group_by(price_sqm)%>%
+  summary(
+    mean_price= mean(price_sqm),
+    median_price= median(price_sqm),
+    min_price= min(price_sqm),
+    max_price= max(price_sqm),
+    count = n()
+  )
+```
+
+```{r}
+ggplot(lj, aes(x = price_sqm)) +
+  geom_histogram(binwidth = 500, fill = "red", color = "black", alpha = 0.7) +
+  labs(title = "区域单价直方图", x = "单价 (元/㎡)", y = "区域数量") +
+  theme_minimal()
+```
+
+可以看到：房屋价格
+
+- 直观结论1:总价在10.6万-1380万之间，总价跨度比较大，单价都集中在1万-2万之间，数量也较为多，价格较高的房屋相对比较少。
+
+## 房屋价格和建筑形式的关系
+```{r}
+ggplot(lj, aes(x = property_style, y = price_ttl)) +
+  geom_boxplot(fill = "lightblue", color = "darkblue")
+  theme_minimal()
+```
+
+发现：
+
+- 发现1 平房的价格最低，塔楼和塔楼结合的户型价格较为接近，板楼的价格较为高。
+
+- 发现2：价格市场，但凡和塔楼有关系的房屋价位都会受影响
+
+## 房屋建筑面积和总价的关系
+```{r}
+print(summary(lj$building_area))
+ggplot(lj, aes(building_area, price_ttl)) +
+    geom_point(color = "red") +
+    geom_smooth(method = "lm", se = FALSE) +
+    ggtitle("建筑面积与价格的散点图") +
+    xlab("建筑面积（平方米）") +
+    ylab("价格（万元）")
+```
+
+发现：
+
+- 发现1：从22.77平方米——588.66平方面积的房子均有，房屋价格和房屋面积成正比
+
+- 发现2：房屋成交量基本集中在100平米左右
+
+## 房屋在所在楼栋所处位置和价格关系
+```{r}
+print(summary(lj$property_height))
+ggplot(lj,aes(property_height,price_sqm))+
+  geom_point(color = "red") +
+    geom_smooth(method = "lm", se = FALSE)+
+  ggtitle("房屋在所在楼栋所处位置与价格的散点图") +
+    xlab("房屋在所在楼栋所处位置") +
+    ylab("单价（万元）")
+
+```
+
+发现：高楼层和矮楼层的单价相较于中楼层的都更便宜
+
+## 探索问题：分析房屋价格受房屋面积、朝向、装修情况、所在区域以及是否靠近地铁的影响
+```{r}
+
+# 绘制朝向对价格的影响
+ggplot(lj, aes(x = directions1, y = price_ttl)) +
+  geom_point(color = "red") +
+    geom_smooth(method = "lm", se = FALSE)+
+  labs(title = "朝向对房屋价格的影响", x = "朝向", y = "房屋价格")
+
+# 绘制装修情况对价格的影响
+ggplot(lj, aes(x = decoration, y = price_ttl)) +
+  geom_point(color = "red") +
+    geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "装修情况对房屋价格的影响", x = "装修情况", y = "房屋价格")
+
+
+# 绘制是否靠近地铁对价格的影响
+ggplot(lj, aes(x = as.factor(near_subway), y = price_ttl)) +
+  geom_point(color = "red") +
+    geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "是否靠近地铁对房屋价格的影响", x = "是否靠近地铁", y = "房屋价格")
+
+```
+发现：
+
+- 发现1：朝南的房屋价格较高
+
+- 发现2：毛坯和精装修的房屋价格较高
+
+-发现3：靠近地铁的房屋价格较高
+
+## 每个区域二手房的关注人数
+```{r}
+region_supply <- lj %>%
+    group_by(property_region) %>%
+    summarize(supply = n())%>%
+    arrange(desc(supply))%>%
+    head(15)
+region_supply_join <- region_supply %>%
+        left_join(lj, by = "property_region")
+region_supply_join
+
+ggplot(region_supply_join, aes(x = property_region, y = followers)) +
+    geom_boxplot(color = "black", fill = "red") +
+    ggtitle("前15个区域的二手房关注度箱线图") +
+    xlab("区域") +
+    ylab("二手房网站的关注人数")
+```
+
+发现：二手房关注多区域有后湖、积玉桥、盘龙城，阳逻最少，侧面反映，后湖、积玉桥、盘龙城的二手房交易量更为高一些，性价比也更高。
+
+
+
+
+
+
+
